@@ -13,8 +13,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Clinchr — Agentic Commerce Demo",
-  description: "Visualising buy-side agent interactions with a Clinchr retailer agent via MCP",
+  title: "Clinchr — Win the Agentic Commerce Revolution",
+  description: "Live demo: watch Clinchr's retailer agent win sales against static catalogues in real time.",
 };
 
 export default function RootLayout({

@@ -3,7 +3,11 @@
 import { useState, useCallback } from "react";
 import ChatPanel from "@/components/ChatPanel";
 import TracePanel from "@/components/TracePanel";
-import { ChatMessage, DiagramPhase, RetailerResult, SCENARIOS } from "@/lib/stubs";
+import { ChatMessage, DiagramPhase, RetailerResult, ReasoningResult, buildTurn } from "@/lib/stubs";
+
+const CYAN = "#00d4ff";
+const MINT = "#00e68a";
+const NAVY = "#060a13";
 
 export default function Home() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -11,71 +15,72 @@ export default function Home() {
   const [currentSnoop, setCurrentSnoop] = useState<RetailerResult | null>(null);
   const [currentBrandB, setCurrentBrandB] = useState<RetailerResult | null>(null);
   const [currentBrandC, setCurrentBrandC] = useState<RetailerResult | null>(null);
+  const [currentReasoning, setCurrentReasoning] = useState<ReasoningResult | null>(null);
   const [isTyping, setIsTyping] = useState(false);
   const [inputValue, setInputValue] = useState("");
-  const [turnIndex, setTurnIndex] = useState(0);
 
-  const handleSend = useCallback(
-    async (text: string) => {
-      setInputValue("");
-      setMessages((prev) => [...prev, { role: "user", content: text }]);
-      setIsTyping(true);
+  const handleSend = useCallback(async (text: string) => {
+    setInputValue("");
+    setMessages((prev) => [...prev, { role: "user", content: text }]);
+    setIsTyping(true);
 
-      const turn = SCENARIOS[turnIndex % SCENARIOS.length];
+    const turn = buildTurn(text);
 
-      // Phase: querying — lines animate
-      setDiagramPhase("querying");
-      setCurrentSnoop(null);
-      setCurrentBrandB(null);
-      setCurrentBrandC(null);
+    // Querying — lines animate
+    setDiagramPhase("querying");
+    setCurrentSnoop(null);
+    setCurrentBrandB(null);
+    setCurrentBrandC(null);
+    setCurrentReasoning(null);
 
-      await delay(1500);
-      // Phase: responding — all retailer nodes light up
-      setDiagramPhase("responding");
-      setCurrentSnoop(turn.snoop);
-      setCurrentBrandB(turn.brandB);
-      setCurrentBrandC(turn.brandC);
+    await delay(1500);
+    // Responding — all nodes light up
+    setDiagramPhase("responding");
+    setCurrentSnoop(turn.snoop);
+    setCurrentBrandB(turn.brandB);
+    setCurrentBrandC(turn.brandC);
 
-      await delay(1800);
-      // Phase: decided — Snoop highlighted, others dimmed
-      setDiagramPhase("decided");
+    await delay(1800);
+    // Reasoning — Clinchr agent reasoning card appears
+    setDiagramPhase("reasoning");
+    setCurrentReasoning(turn.reasoning);
 
-      await delay(1500);
-      setIsTyping(false);
-      setMessages((prev) => [
-        ...prev,
-        { role: "assistant", content: turn.assistantMessage },
-      ]);
+    await delay(2000);
+    // Decided — winner chosen
+    setDiagramPhase("decided");
 
-      await delay(1000);
-      // Back to idle but keep retailer data visible
-      setDiagramPhase("idle");
-      setTurnIndex(turnIndex + 1);
-    },
-    [turnIndex]
-  );
+    await delay(1500);
+    setIsTyping(false);
+    setMessages((prev) => [...prev, { role: "assistant", content: turn.assistantMessage }]);
+
+    await delay(1000);
+    setDiagramPhase("idle");
+  }, []);
 
   return (
-    <div className="flex h-screen bg-gray-100 overflow-hidden">
+    <div className="flex h-screen overflow-hidden" style={{ background: NAVY }}>
       {/* Branding bar */}
-      <div className="absolute top-0 left-0 right-0 z-10 h-10 bg-white border-b border-gray-200 flex items-center px-6 justify-between">
+      <div
+        className="absolute top-0 left-0 right-0 z-10 h-10 flex items-center px-6 justify-between border-b"
+        style={{ background: "#080e1a", borderColor: "rgba(255,255,255,0.06)" }}
+      >
         <div className="flex items-center gap-2">
-          <span className="text-sm font-bold text-gray-900">Clinchr</span>
-          <span className="text-gray-300 text-sm">|</span>
-          <span className="text-xs text-gray-400">Agentic Commerce Demo</span>
+          <span className="text-sm font-bold" style={{ color: CYAN }}>Clinchr</span>
+          <span className="text-sm" style={{ color: "#334155" }}>|</span>
+          <span className="text-xs" style={{ color: "#8892a4" }}>Agentic Commerce Demo</span>
         </div>
         <div className="flex items-center gap-1.5">
-          <div className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
-          <span className="text-[11px] text-gray-400">Snoop Boutique agent active</span>
+          <div className="w-1.5 h-1.5 rounded-full" style={{ background: MINT, boxShadow: `0 0 6px ${MINT}` }} />
+          <span className="text-[11px]" style={{ color: "#8892a4" }}>Snoop Boutique agent active</span>
         </div>
       </div>
 
       {/* Split screen */}
       <div className="flex w-full pt-10">
         {/* Left — chat */}
-        <div className="w-1/2 border-r border-gray-200 flex flex-col overflow-hidden">
-          <div className="px-4 pt-3 pb-1 bg-gray-50 border-b border-gray-100">
-            <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-widest">
+        <div className="w-1/2 flex flex-col overflow-hidden border-r" style={{ borderColor: "rgba(255,255,255,0.06)" }}>
+          <div className="px-4 pt-3 pb-1 border-b" style={{ background: "#080e1a", borderColor: "rgba(255,255,255,0.06)" }}>
+            <p className="text-[11px] font-semibold uppercase tracking-widest font-mono" style={{ color: "#334155" }}>
               User · Shopping Agent
             </p>
           </div>
@@ -93,8 +98,8 @@ export default function Home() {
 
         {/* Right — agent diagram */}
         <div className="w-1/2 flex flex-col overflow-hidden">
-          <div className="px-4 pt-3 pb-1 bg-gray-900 border-b border-gray-800">
-            <p className="text-[11px] font-semibold text-gray-500 uppercase tracking-widest font-mono">
+          <div className="px-4 pt-3 pb-1 border-b" style={{ background: "#080e1a", borderColor: "rgba(255,255,255,0.06)" }}>
+            <p className="text-[11px] font-semibold uppercase tracking-widest font-mono" style={{ color: "#334155" }}>
               Clinchr · Retailer Agent Network
             </p>
           </div>
@@ -104,6 +109,7 @@ export default function Home() {
               snoop={currentSnoop}
               brandB={currentBrandB}
               brandC={currentBrandC}
+              reasoning={currentReasoning}
             />
           </div>
         </div>
