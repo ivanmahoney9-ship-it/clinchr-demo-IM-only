@@ -3,7 +3,7 @@
 import { useState, useCallback } from "react";
 import ChatPanel from "@/components/ChatPanel";
 import TracePanel from "@/components/TracePanel";
-import { ChatMessage, DiagramPhase, RetailerResult, ReasoningResult, buildTurn } from "@/lib/stubs";
+import { ChatMessage, DiagramPhase, LocationContext, RetailerResult, ReasoningResult, buildTurn } from "@/lib/stubs";
 
 const CYAN = "#00d4ff";
 const MINT = "#00e68a";

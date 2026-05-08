@@ -1,6 +1,7 @@
 "use client";
 
-import { DiagramPhase, RetailerResult, ReasoningResult } from "@/lib/stubs";
+import { useEffect, useState } from "react";
+import { DiagramPhase, LocationContext, RetailerResult, ReasoningResult } from "@/lib/stubs";
 
 interface Props {
   phase: DiagramPhase;
@@ -8,17 +9,37 @@ interface Props {
   brandB: RetailerResult | null;
   brandC: RetailerResult | null;
   reasoning: ReasoningResult | null;
+  locationContext: LocationContext | null;
 }
 
 const CYAN = "#00d4ff";
 const MINT = "#00e68a";
 const NAVY = "#060a13";
 
-export default function TracePanel({ phase, snoop, brandB, brandC, reasoning }: Props) {
+const SNOOP_AGENT_MESSAGES = [
+  "tools/call get_product_offer",
+  "tools/result priced_offer",
+  "tools/call confirm_levers",
+];
+
+export default function TracePanel({ phase, snoop, brandB, brandC, reasoning, locationContext }: Props) {
   const isQuerying   = phase === "querying";
   const isResponding = phase === "responding" || phase === "reasoning" || phase === "decided";
+  const isNegotiating = phase === "responding";
   const isReasoning  = phase === "reasoning";
   const isDecided    = phase === "decided";
+
+  const [tickerIndex, setTickerIndex] = useState(0);
+  useEffect(() => {
+    if (!isNegotiating) {
+      setTickerIndex(0);
+      return;
+    }
+    const id = setInterval(() => {
+      setTickerIndex((i) => (i + 1) % SNOOP_AGENT_MESSAGES.length);
+    }, 1400);
+    return () => clearInterval(id);
+  }, [isNegotiating]);
 
   return (
     <div className="flex flex-col h-full select-none" style={{ background: NAVY }}>
@@ -59,25 +80,96 @@ export default function TracePanel({ phase, snoop, brandB, brandC, reasoning }: 
             </div>
           </div>
 
-          {/* SVG connecting lines */}
-          <svg viewBox="0 0 360 52" className="w-full" style={{ height: 52 }}>
-            <line x1="180" y1="0" x2="55"  y2="52" stroke="#1e293b" strokeWidth="1.5" strokeDasharray="4 3" />
-            <line x1="180" y1="0" x2="180" y2="52" stroke="#1e293b" strokeWidth="1.5" strokeDasharray="4 3" />
-            <line x1="180" y1="0" x2="305" y2="52" stroke="#1e293b" strokeWidth="1.5" strokeDasharray="4 3" />
-            {isQuerying && (
-              <>
-                <circle r="4" fill={CYAN} opacity="0.9">
-                  <animateMotion dur="0.9s" repeatCount="indefinite" path="M180,0 L55,52" />
-                </circle>
-                <circle r="4" fill={CYAN} opacity="0.9">
-                  <animateMotion dur="0.9s" repeatCount="indefinite" begin="0.3s" path="M180,0 L180,52" />
-                </circle>
-                <circle r="4" fill={CYAN} opacity="0.9">
-                  <animateMotion dur="0.9s" repeatCount="indefinite" begin="0.15s" path="M180,0 L305,52" />
-                </circle>
-              </>
+          {/* Connector area — Gemini → (Snoop Agent) → retailers, with bidirectional exchange */}
+          <div className="relative w-full" style={{ height: 130 }}>
+            <svg
+              viewBox="0 0 360 130"
+              preserveAspectRatio="none"
+              className="absolute inset-0 w-full h-full"
+            >
+              {/* Gemini (180,0) → Snoop Agent (60,55) → Snoop Boutique (60,130) */}
+              <line x1="180" y1="0"  x2="60"  y2="55"  stroke="#1e293b" strokeWidth="1.5" strokeDasharray="4 3" />
+              <line x1="60"  y1="80" x2="60"  y2="130" stroke={isNegotiating ? CYAN : "#1e293b"} strokeOpacity={isNegotiating ? 0.5 : 1} strokeWidth="1.5" strokeDasharray="4 3" />
+              {/* Gemini → Elm Hill (180,130) */}
+              <line x1="180" y1="0"  x2="180" y2="130" stroke="#1e293b" strokeWidth="1.5" strokeDasharray="4 3" />
+              {/* Gemini → Florette (300,130) */}
+              <line x1="180" y1="0"  x2="300" y2="130" stroke="#1e293b" strokeWidth="1.5" strokeDasharray="4 3" />
+
+              {isQuerying && (
+                <>
+                  <circle r="4" fill={CYAN} opacity="0.9">
+                    <animateMotion dur="1.1s" repeatCount="indefinite" path="M180,0 L60,55 L60,130" />
+                  </circle>
+                  <circle r="4" fill={CYAN} opacity="0.9">
+                    <animateMotion dur="1.1s" repeatCount="indefinite" begin="0.35s" path="M180,0 L180,130" />
+                  </circle>
+                  <circle r="4" fill={CYAN} opacity="0.9">
+                    <animateMotion dur="1.1s" repeatCount="indefinite" begin="0.18s" path="M180,0 L300,130" />
+                  </circle>
+                </>
+              )}
+
+              {isNegotiating && (
+                <>
+                  {/* Request: Gemini → Snoop Agent */}
+                  <circle r="3.5" fill={CYAN}>
+                    <animateMotion dur="1.4s" repeatCount="indefinite" path="M180,0 L60,55" />
+                  </circle>
+                  {/* Response: Snoop Agent → Gemini */}
+                  <circle r="3.5" fill={MINT}>
+                    <animateMotion dur="1.4s" repeatCount="indefinite" begin="0.7s" path="M60,55 L180,0" />
+                  </circle>
+                  {/* Delegation: Snoop Agent → Snoop Boutique */}
+                  <circle r="3" fill={CYAN} opacity="0.7">
+                    <animateMotion dur="1.4s" repeatCount="indefinite" begin="0.35s" path="M60,80 L60,130" />
+                  </circle>
+                </>
+              )}
+            </svg>
+
+            {/* Snoop Agent pill — positioned over the leftmost column, centred at x=60/360 ≈ 16.67% */}
+            <div
+              className="absolute flex justify-center"
+              style={{ top: 40, left: "16.67%", transform: "translateX(-50%)" }}
+            >
+              <div
+                className="px-2.5 py-1.5 rounded-lg border text-center transition-all duration-500"
+                style={{
+                  borderColor: isNegotiating ? CYAN : isResponding ? "rgba(0,212,255,0.4)" : "#1e293b",
+                  background: isNegotiating
+                    ? "rgba(0,212,255,0.1)"
+                    : isResponding
+                    ? "rgba(0,212,255,0.05)"
+                    : "rgba(255,255,255,0.03)",
+                  boxShadow: isNegotiating ? `0 0 14px rgba(0,212,255,0.3)` : "none",
+                  minWidth: 96,
+                }}
+              >
+                <p className="text-[9px] font-semibold text-white leading-tight">Snoop Agent</p>
+                <p className="text-[8px] font-mono leading-tight" style={{ color: CYAN }}>Clinchr · MCP</p>
+              </div>
+            </div>
+
+            {/* MCP message ticker — floats between Gemini and Snoop Agent during negotiation */}
+            {isNegotiating && (
+              <div
+                className="absolute pointer-events-none"
+                style={{ top: 10, left: "50%", transform: "translateX(-10%)" }}
+              >
+                <div
+                  key={tickerIndex}
+                  className="text-[9px] font-mono px-2 py-0.5 rounded border transition-opacity duration-300"
+                  style={{
+                    color: CYAN,
+                    background: "rgba(0,212,255,0.08)",
+                    borderColor: "rgba(0,212,255,0.3)",
+                  }}
+                >
+                  {SNOOP_AGENT_MESSAGES[tickerIndex]}
+                </div>
+              </div>
             )}
-          </svg>
+          </div>
 
           {/* Retailer nodes */}
           <div className="flex gap-2">
@@ -146,6 +238,27 @@ export default function TracePanel({ phase, snoop, brandB, brandC, reasoning }: 
               <p className="text-[10px] leading-relaxed" style={{ color: "rgba(255,255,255,0.65)" }}>
                 → {reasoning.explanation}
               </p>
+              {locationContext && (
+                <div
+                  className="mt-2 pt-2 border-t"
+                  style={{ borderColor: "rgba(0,212,255,0.15)" }}
+                >
+                  <p className="text-[10px] font-semibold mb-1" style={{ color: CYAN }}>
+                    {locationContext.headline}
+                  </p>
+                  <ul className="space-y-0.5">
+                    {locationContext.bullets.map((b) => (
+                      <li
+                        key={b}
+                        className="text-[10px] leading-snug"
+                        style={{ color: "rgba(255,255,255,0.65)" }}
+                      >
+                        • {b}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
             </div>
           )}
 
@@ -158,7 +271,7 @@ export default function TracePanel({ phase, snoop, brandB, brandC, reasoning }: 
               <p className="text-[10px] animate-pulse" style={{ color: CYAN }}>Agent querying all retailers…</p>
             )}
             {phase === "responding" && (
-              <p className="text-[10px]" style={{ color: "#8892a4" }}>Evaluating responses…</p>
+              <p className="text-[10px]" style={{ color: CYAN }}>Snoop Agent negotiating with Gemini via MCP…</p>
             )}
             {phase === "reasoning" && (
               <p className="text-[10px]" style={{ color: CYAN }}>Clinchr agent selecting lever…</p>

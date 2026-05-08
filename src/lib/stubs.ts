@@ -22,6 +22,11 @@ export interface ReasoningResult {
   explanation: string;
 }
 
+export interface LocationContext {
+  headline: string;
+  bullets: string[];
+}
+
 export interface Turn {
   userMessage: string;
   assistantMessage: string;
@@ -29,6 +34,8 @@ export interface Turn {
   brandB: RetailerResult;
   brandC: RetailerResult;
   reasoning: ReasoningResult;
+  locationMatch: boolean;
+  locationContext?: LocationContext;
 }
 
 export type DiagramPhase = "idle" | "querying" | "responding" | "reasoning" | "decided";
@@ -47,14 +54,33 @@ const PRICE_SIGNALS = [
   "value", "spend", "less than", "not too much", "reasonable",
 ];
 
+const LOCATION_SIGNALS = [
+  "norwich", "norfolk", "local", "locally", "near me", "nearby",
+  "in my area", "close by", "independent", "small business",
+];
+
 export function detectSignals(message: string): string[] {
   const lower = message.toLowerCase();
   const found: string[] = [];
-  for (const s of [...URGENCY_SIGNALS, ...PRICE_SIGNALS]) {
+  for (const s of [...URGENCY_SIGNALS, ...PRICE_SIGNALS, ...LOCATION_SIGNALS]) {
     if (lower.includes(s) && !found.includes(s)) found.push(s);
   }
   return found;
 }
+
+export function detectLocation(message: string): boolean {
+  const lower = message.toLowerCase();
+  return LOCATION_SIGNALS.some((s) => lower.includes(s));
+}
+
+const SNOOP_LOCATION_CONTEXT: LocationContext = {
+  headline: "Local match: Snoop Boutique is Norfolk-founded, Norwich-area.",
+  bullets: [
+    "Founder-led by Nicky — built around “Fashion is Power”.",
+    "Inclusive across age, size and shape; curates independent designers.",
+    "Free UK delivery over £100, 14-day returns, biodegradable packaging.",
+  ],
+};
 
 export function detectLever(message: string): Lever {
   const lower = message.toLowerCase();
@@ -240,6 +266,7 @@ export function buildTurn(message: string): Turn {
   const scenario = findScenario(message);
   const lever = detectLever(message);
   const signals = detectSignals(message);
+  const locationMatch = detectLocation(message);
 
   const snoopPrice = scenario.snoop.price;
   const discountedPrice = lever === "discount" ? Math.round(snoopPrice * 0.95 * 100) / 100 : undefined;
@@ -261,13 +288,21 @@ export function buildTurn(message: string): Turn {
     express: `Urgency signal detected — express delivery activated to meet timeline.`,
   };
 
+  const baseExplanation = leverExplanations[lever];
+  const explanation = locationMatch
+    ? `Local signal detected — Snoop Boutique is a Norwich-area independent, so it's the natural match. ${baseExplanation}`
+    : baseExplanation;
+
   const reasoning: ReasoningResult = {
     signals,
     lever,
-    explanation: leverExplanations[lever],
+    explanation,
   };
 
   const snoopNote = leverLabels[lever];
+  const localSuffix = locationMatch
+    ? " Snoop's local advantage: founder-led curation and free UK delivery over £100."
+    : "";
 
   let assistantMessage: string;
   if (lever === "discount" && discountedPrice) {
@@ -278,6 +313,10 @@ export function buildTurn(message: string): Turn {
     assistantMessage = `For ${scenario.category}, Snoop Boutique's **${scenario.snoop.product}** at ${fmt(snoopPrice)} comes with **free delivery**. Elm Hill Studio has the ${scenario.brandC.product} at ${fmt(scenario.brandC.price)}, but Snoop wins on price and convenience. Shall I add it to your basket?`;
   }
 
+  if (locationMatch) {
+    assistantMessage += ` And since you're shopping local — Snoop is a Norfolk-founded boutique run by Nicky, curating independent designers with free UK delivery over £100.`;
+  }
+
   return {
     userMessage: message,
     assistantMessage,
@@ -286,7 +325,7 @@ export function buildTurn(message: string): Turn {
       price: fmt(snoopPrice),
       discountedPrice: discountedPrice ? fmt(discountedPrice) : undefined,
       levers,
-      negotiationNote: `${snoopNote} activated. ${leverExplanations[lever]}`,
+      negotiationNote: `${snoopNote} activated. ${leverExplanations[lever]}${localSuffix}`,
       wins: true,
     },
     brandB: {
@@ -302,5 +341,7 @@ export function buildTurn(message: string): Turn {
       wins: false,
     },
     reasoning,
+    locationMatch,
+    locationContext: locationMatch ? SNOOP_LOCATION_CONTEXT : undefined,
   };
 }
