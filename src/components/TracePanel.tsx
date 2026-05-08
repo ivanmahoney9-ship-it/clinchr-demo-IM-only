@@ -10,6 +10,7 @@ interface Props {
   brandC: RetailerResult | null;
   reasoning: ReasoningResult | null;
   locationContext: LocationContext | null;
+  tickerOverride: string | null;
 }
 
 const CYAN = "#00d4ff";
@@ -22,7 +23,7 @@ const SNOOP_AGENT_MESSAGES = [
   "tools/call confirm_levers",
 ];
 
-export default function TracePanel({ phase, snoop, brandB, brandC, reasoning, locationContext }: Props) {
+export default function TracePanel({ phase, snoop, brandB, brandC, reasoning, locationContext, tickerOverride }: Props) {
   const isQuerying   = phase === "querying";
   const isResponding = phase === "responding" || phase === "reasoning" || phase === "decided";
   const isNegotiating = phase === "responding";
@@ -31,15 +32,14 @@ export default function TracePanel({ phase, snoop, brandB, brandC, reasoning, lo
 
   const [tickerIndex, setTickerIndex] = useState(0);
   useEffect(() => {
-    if (!isNegotiating) {
-      setTickerIndex(0);
-      return;
-    }
+    if (!isNegotiating || tickerOverride) return;
     const id = setInterval(() => {
       setTickerIndex((i) => (i + 1) % SNOOP_AGENT_MESSAGES.length);
     }, 1400);
     return () => clearInterval(id);
-  }, [isNegotiating]);
+  }, [isNegotiating, tickerOverride]);
+
+  const tickerText = tickerOverride ?? SNOOP_AGENT_MESSAGES[tickerIndex];
 
   return (
     <div className="flex flex-col h-full select-none" style={{ background: NAVY }}>
@@ -157,15 +157,15 @@ export default function TracePanel({ phase, snoop, brandB, brandC, reasoning, lo
                 style={{ top: 10, left: "50%", transform: "translateX(-10%)" }}
               >
                 <div
-                  key={tickerIndex}
-                  className="text-[9px] font-mono px-2 py-0.5 rounded border transition-opacity duration-300"
+                  key={tickerText}
+                  className="text-[9px] font-mono px-2 py-0.5 rounded border transition-opacity duration-300 whitespace-nowrap"
                   style={{
                     color: CYAN,
                     background: "rgba(0,212,255,0.08)",
                     borderColor: "rgba(0,212,255,0.3)",
                   }}
                 >
-                  {SNOOP_AGENT_MESSAGES[tickerIndex]}
+                  {tickerText}
                 </div>
               </div>
             )}
@@ -185,7 +185,7 @@ export default function TracePanel({ phase, snoop, brandB, brandC, reasoning, lo
               isQuerying={isQuerying}
             />
             <RetailerNode
-              name="Elm Hill Studio"
+              name="Atwin Store"
               sub="Norwich · Static"
               badge="HTTP"
               badgeStyle={{ background: "rgba(255,255,255,0.04)", color: "#8892a4", borderColor: "#1e293b" }}
@@ -196,7 +196,7 @@ export default function TracePanel({ phase, snoop, brandB, brandC, reasoning, lo
               isQuerying={isQuerying}
             />
             <RetailerNode
-              name="Florette London"
+              name="The Mercantile"
               sub="London · Static"
               badge="HTTP"
               badgeStyle={{ background: "rgba(255,255,255,0.04)", color: "#8892a4", borderColor: "#1e293b" }}
@@ -347,11 +347,13 @@ function RetailerNode({ name, sub, badge, badgeStyle, result, isResponding, isDe
           </div>
           {isWinner && (
             <div className="flex flex-wrap gap-1 pt-0.5">
-              {result.levers.filter((l) => l.active).map((lever) => (
+              {result.levers.filter((l) => l.active || l.rejected).map((lever) => (
                 <span
                   key={lever.label}
-                  className="text-[8px] px-1.5 py-0.5 rounded-full border"
-                  style={{ background: "rgba(0,230,138,0.1)", borderColor: "rgba(0,230,138,0.35)", color: MINT }}
+                  className="text-[8px] px-1.5 py-0.5 rounded-full border transition-all duration-300"
+                  style={lever.rejected
+                    ? { background: "rgba(239,68,68,0.08)", borderColor: "rgba(239,68,68,0.35)", color: "#f87171", textDecoration: "line-through" }
+                    : { background: "rgba(0,230,138,0.1)", borderColor: "rgba(0,230,138,0.35)", color: MINT }}
                 >
                   {lever.label}
                 </span>

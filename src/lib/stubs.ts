@@ -5,15 +5,49 @@ export interface ChatMessage {
   content: string;
 }
 
-export type Lever = "free_delivery" | "discount" | "express";
+export type Lever =
+  | "free_delivery"
+  | "discount"
+  | "express"
+  | "sustainability"
+  | "fit"
+  | "value";
+
+const SOFT_LEVERS: Lever[] = ["sustainability", "fit", "value"];
+
+export const LEVER_LABELS: Record<Lever, string> = {
+  free_delivery: "Free delivery",
+  discount: "5% discount",
+  express: "Express delivery",
+  sustainability: "Sustainability match",
+  fit: "Fit-confidence match",
+  value: "Curated-value match",
+};
+
+const ALL_LEVERS: Lever[] = [
+  "free_delivery", "discount", "express", "sustainability", "fit", "value",
+];
+
+function pickSoftLever(seed: string): Lever {
+  let hash = 0;
+  for (let i = 0; i < seed.length; i++) hash = (hash * 31 + seed.charCodeAt(i)) >>> 0;
+  return SOFT_LEVERS[hash % SOFT_LEVERS.length];
+}
 
 export interface RetailerResult {
   product: string;
   price: string;
   discountedPrice?: string;
-  levers: { label: string; active: boolean }[];
+  levers: { label: string; active: boolean; rejected?: boolean }[];
   negotiationNote?: string;
   wins: boolean;
+}
+
+export interface NegotiationStep {
+  atMs: number;
+  ticker: string;
+  leverUpdate?: { lever: Lever; active?: boolean; rejected?: boolean };
+  priceUpdate?: { discountedPrice?: string };
 }
 
 export interface ReasoningResult {
@@ -36,6 +70,8 @@ export interface Turn {
   reasoning: ReasoningResult;
   locationMatch: boolean;
   locationContext?: LocationContext;
+  negotiationScript?: NegotiationStep[];
+  respondingDurationMs?: number;
 }
 
 export type DiagramPhase = "idle" | "querying" | "responding" | "reasoning" | "decided";
@@ -56,13 +92,37 @@ const PRICE_SIGNALS = [
 
 const LOCATION_SIGNALS = [
   "norwich", "norfolk", "local", "locally", "near me", "nearby",
-  "in my area", "close by", "independent", "small business",
+  "in my area", "close by", "independent", "small business", "boutique",
+];
+
+const SUSTAINABILITY_SIGNALS = [
+  "sustainable", "sustainability", "eco", "eco-friendly", "ethical", "ethically",
+  "organic", "biodegradable", "green", "conscious", "environment", "environmentally",
+  "low-emission", "low emission", "carbon", "earth-friendly", "planet",
+];
+
+const FIT_SIGNALS = [
+  "flattering", "inclusive", "inclusive sizing", "curvy", "plus size", "plus-size",
+  "midsize", "mid-size", "petite", "my shape", "my size", "body shape",
+  "figure-flattering", "tall", "size 14", "size 16", "size 18", "size 20", "size 22",
+];
+
+const VALUE_SIGNALS_KEYWORDS = [
+  "curated", "designer", "indie", "indie designer", "craft", "crafted",
+  "handmade", "artisan", "quality", "well-made", "well made",
 ];
 
 export function detectSignals(message: string): string[] {
   const lower = message.toLowerCase();
   const found: string[] = [];
-  for (const s of [...URGENCY_SIGNALS, ...PRICE_SIGNALS, ...LOCATION_SIGNALS]) {
+  for (const s of [
+    ...URGENCY_SIGNALS,
+    ...PRICE_SIGNALS,
+    ...LOCATION_SIGNALS,
+    ...SUSTAINABILITY_SIGNALS,
+    ...FIT_SIGNALS,
+    ...VALUE_SIGNALS_KEYWORDS,
+  ]) {
     if (lower.includes(s) && !found.includes(s)) found.push(s);
   }
   return found;
@@ -82,11 +142,15 @@ const SNOOP_LOCATION_CONTEXT: LocationContext = {
   ],
 };
 
-export function detectLever(message: string): Lever {
+export function detectLever(message: string, basketValue: number): Lever {
   const lower = message.toLowerCase();
   if (URGENCY_SIGNALS.some((s) => lower.includes(s))) return "express";
   if (PRICE_SIGNALS.some((s) => lower.includes(s))) return "discount";
-  return "free_delivery";
+  if (SUSTAINABILITY_SIGNALS.some((s) => lower.includes(s))) return "sustainability";
+  if (FIT_SIGNALS.some((s) => lower.includes(s))) return "fit";
+  if (VALUE_SIGNALS_KEYWORDS.some((s) => lower.includes(s))) return "value";
+  if (basketValue >= 100) return "free_delivery";
+  return pickSoftLever(message);
 }
 
 // ─── 20 scenario templates ───────────────────────────────────────────────────
@@ -103,142 +167,142 @@ const SCENARIOS: ScenarioTemplate[] = [
   {
     keywords: ["wedding", "summer", "garden", "outdoor", "bride", "guest"],
     category: "summer wedding guest",
-    snoop: { product: "Meadow Bloom Midi", price: 89 },
-    brandB: { product: "Garden Party Dress", price: 99 },
-    brandC: { product: "Poppy Floral Midi", price: 95 },
+    snoop: { product: "Orange & Cream Stripe Print Tie Neck Smock Midi (AX Paris)", price: 49 },
+    brandB: { product: "Pink City Prints Calypso Lime Pineapple Dress", price: 115 },
+    brandC: { product: "Atwin The Label — The Solstice Dress in Paprika Ramie Linen", price: 96 },
   },
   {
     keywords: ["winter", "christmas", "festive", "december", "cold"],
     category: "winter occasion",
-    snoop: { product: "Velvet Plum Wrap", price: 105 },
-    brandB: { product: "Winter Bloom Dress", price: 119 },
-    brandC: { product: "Festive Midi", price: 112 },
+    snoop: { product: "Sofia Knitted Slip Dress — Mink (Charli)", price: 34 },
+    brandB: { product: "Leon & Harper Rival Deep Green Dress", price: 160 },
+    brandC: { product: "Nadinoo — Pinafore Dress in Wine Corduroy", price: 185 },
   },
   {
     keywords: ["beach", "destination", "tropical", "abroad", "island", "holiday wedding"],
     category: "beach wedding guest",
-    snoop: { product: "Coastal Ruffle Midi", price: 79 },
-    brandB: { product: "Shoreline Dress", price: 89 },
-    brandC: { product: "Sea Breeze Sundress", price: 85 },
+    snoop: { product: "Nemera Leopard Print Maxi Dress", price: 39 },
+    brandB: { product: "Pink City Prints Calypso Lime Pineapple Dress", price: 115 },
+    brandC: { product: "Atwin The Label — The Solstice Dress in Paprika Ramie Linen", price: 96 },
   },
   {
     keywords: ["cocktail", "reception", "drinks", "smart casual", "elegant"],
     category: "cocktail party",
-    snoop: { product: "Noir Crepe Mini", price: 95 },
-    brandB: { product: "Evening Cocktail Dress", price: 109 },
-    brandC: { product: "Tailored Shift Dress", price: 102 },
+    snoop: { product: "Aphrodite Mini Dress — Green", price: 27 },
+    brandB: { product: "Leon & Harper Rival Deep Green Dress", price: 160 },
+    brandC: { product: "Clement House — The Nora Dress in Hazel Stripe Linen Blend", price: 175 },
   },
   {
     keywords: ["birthday", "night out", "celebration", "going out", "party"],
     category: "birthday / night out",
-    snoop: { product: "Sequin Wrap Mini", price: 85 },
-    brandB: { product: "Party Mini Dress", price: 98 },
-    brandC: { product: "Sparkle Slip Dress", price: 92 },
+    snoop: { product: "Poppy Cut Out Detail Evening Dress — Red", price: 55 },
+    brandB: { product: "Lowie Etta Washed Red Dress", price: 139 },
+    brandC: { product: "Clement House — The Nora Dress in Hazel Stripe Linen Blend", price: 175 },
   },
   {
     keywords: ["new year", "nye", "countdown", "new years", "silvester"],
     category: "New Year's Eve",
-    snoop: { product: "Midnight Gold Slip", price: 115 },
-    brandB: { product: "NYE Sequin Dress", price: 129 },
-    brandC: { product: "Glitter Column Dress", price: 122 },
+    snoop: { product: "Misha Stone Embellished Evening Dress — Black", price: 55 },
+    brandB: { product: "Leon & Harper Rival Deep Green Dress", price: 160 },
+    brandC: { product: "Clement House — The Nora Dress in Hazel Stripe Linen Blend", price: 175 },
   },
   {
     keywords: ["work", "office", "professional", "9 to 5", "corporate casual", "monday"],
     category: "office / work",
-    snoop: { product: "Tailored Linen Midi", price: 75 },
-    brandB: { product: "Smart Day Dress", price: 85 },
-    brandC: { product: "Structured Shift", price: 79 },
+    snoop: { product: "Hendrix Midi Dress — Black/Sand", price: 39 },
+    brandB: { product: "Nice Things Black Seersucker Dress", price: 79 },
+    brandC: { product: "Atwin The Label — The Solstice Dress in Paprika Ramie Linen", price: 96 },
   },
   {
     keywords: ["business", "client", "dinner", "meeting", "corporate", "boardroom"],
     category: "business dinner",
-    snoop: { product: "Ponte Sheath Dress", price: 98 },
-    brandB: { product: "Business Midi Dress", price: 112 },
-    brandC: { product: "Classic Column Midi", price: 105 },
+    snoop: { product: "Tallulah Maxi Dress — Black", price: 55 },
+    brandB: { product: "Basic Apparel Chane Sodalite Blue Dress", price: 75 },
+    brandC: { product: "Nadinoo — Pinafore Dress in Wine Corduroy", price: 185 },
   },
   {
     keywords: ["date", "romantic", "restaurant", "evening", "dinner date"],
     category: "date night",
-    snoop: { product: "Silk Bias-Cut Midi", price: 99 },
-    brandB: { product: "Date Night Wrap", price: 115 },
-    brandC: { product: "Evening Slip Dress", price: 108 },
+    snoop: { product: "Tallulah Maxi Dress — Red", price: 55 },
+    brandB: { product: "Lowie Etta Washed Red Dress", price: 139 },
+    brandC: { product: "Clement House — The Nora Dress in Hazel Stripe Linen Blend", price: 175 },
   },
   {
     keywords: ["black tie", "gala", "ball", "formal", "awards", "ceremony"],
     category: "black tie / gala",
-    snoop: { product: "Midnight Velvet Gown", price: 145 },
-    brandB: { product: "Evening Cascade Maxi", price: 175 },
-    brandC: { product: "Velvet Column Gown", price: 155 },
+    snoop: { product: "Zelma High Neck Maxi Dress — Wine (Runaway the Label)", price: 95 },
+    brandB: { product: "Leon & Harper Rival Deep Green Dress", price: 160 },
+    brandC: { product: "Tapuh — Cloud 9 Dress in Toasted Cinnamon Stripe", price: 305 },
   },
   {
     keywords: ["brunch", "casual", "daytime", "lunch", "relaxed", "sunday"],
     category: "casual / brunch",
-    snoop: { product: "Linen Tiered Midi", price: 65 },
-    brandB: { product: "Casual Floral Dress", price: 75 },
-    brandC: { product: "Relaxed Day Dress", price: 69 },
+    snoop: { product: "Daisy Ruffle Dress", price: 29 },
+    brandB: { product: "Numph Erina Sea Turtle Dress", price: 54 },
+    brandC: { product: "Atwin The Label — The Solstice Dress in Paprika Ramie Linen", price: 96 },
   },
   {
     keywords: ["holiday", "vacation", "resort", "summer holiday", "packing"],
     category: "holiday / vacation",
-    snoop: { product: "Amalfi Sundress", price: 72 },
-    brandB: { product: "Holiday Maxi Dress", price: 82 },
-    brandC: { product: "Coastal Midi Dress", price: 78 },
+    snoop: { product: "City Goddess Printed Crossover Maxi Dress", price: 49 },
+    brandB: { product: "Pink City Prints Calypso Lime Pineapple Dress", price: 115 },
+    brandC: { product: "Atwin The Label — The Solstice Dress in Paprika Ramie Linen", price: 96 },
   },
   {
     keywords: ["mum", "mom", "mother", "mothers day", "mother's day", "mam"],
     category: "Mother's Day gift",
-    snoop: { product: "Silk Floral A-Line", price: 89 },
-    brandB: { product: "Floral Wrap Dress", price: 99 },
-    brandC: { product: "Classic Floral Midi", price: 94 },
+    snoop: { product: "Amari Maxi Dress — Sand", price: 45 },
+    brandB: { product: "Numph Erina Sea Turtle Dress", price: 54 },
+    brandC: { product: "Clement House — The Nora Dress in Hazel Stripe Linen Blend", price: 175 },
   },
   {
     keywords: ["gift", "present", "friend", "surprise", "birthday gift", "for her"],
     category: "gift for a friend",
-    snoop: { product: "Bow-Detail Midi", price: 79 },
-    brandB: { product: "Gift-Worthy Wrap", price: 89 },
-    brandC: { product: "Elegant Day Dress", price: 84 },
+    snoop: { product: "Maggie Maxi Dress — Blue", price: 32.5 },
+    brandB: { product: "Numph Hensley Bright White Dress", price: 50 },
+    brandC: { product: "Atwin The Label — The Solstice Dress in Paprika Ramie Linen", price: 96 },
   },
   {
     keywords: ["autumn", "fall", "october", "november", "harvest", "rustic"],
     category: "autumn occasion",
-    snoop: { product: "Burnt Sienna Midi", price: 92 },
-    brandB: { product: "Autumn Floral Dress", price: 105 },
-    brandC: { product: "Rust Wrap Dress", price: 98 },
+    snoop: { product: "Biscuit Knitted Racer Neck Fringe Hem Midi (AX Paris)", price: 38 },
+    brandB: { product: "Lowie Etta Washed Red Dress", price: 139 },
+    brandC: { product: "Charl Knitwear — Sailor Dress in Navy Corduroy", price: 270 },
   },
   {
     keywords: ["graduation", "ceremony", "academic", "university", "prom", "graduation ball"],
     category: "graduation",
-    snoop: { product: "Ivory Satin Midi", price: 95 },
-    brandB: { product: "Graduation Day Dress", price: 108 },
-    brandC: { product: "Ceremony Midi", price: 102 },
+    snoop: { product: "Libertine Maxi Dress — Black", price: 39 },
+    brandB: { product: "Indi & Cold White Cross-Stitch Dress", price: 140 },
+    brandC: { product: "Nadinoo — Pinafore Dress in Wine Corduroy", price: 185 },
   },
   {
     keywords: ["hen", "bachelorette", "bridesmaid", "bride tribe", "hen do", "hen party"],
     category: "hen party",
-    snoop: { product: "Blush Ruched Mini", price: 78 },
-    brandB: { product: "Hen Party Dress", price: 88 },
-    brandC: { product: "Playful Mini Dress", price: 83 },
+    snoop: { product: "Alola Halter Maxi Dress — Black", price: 39 },
+    brandB: { product: "Pink City Prints Calypso Lime Pineapple Dress", price: 115 },
+    brandC: { product: "Clement House — The Nora Dress in Hazel Stripe Linen Blend", price: 175 },
   },
   {
     keywords: ["interview", "job", "graduate job", "first job", "smart", "professional look"],
     category: "job interview",
-    snoop: { product: "Structured Crepe Dress", price: 85 },
-    brandB: { product: "Interview-Ready Midi", price: 98 },
-    brandC: { product: "Clean-Line Sheath", price: 90 },
+    snoop: { product: "Black Lace Contrast Draped Waist Midi (AX Paris)", price: 29 },
+    brandB: { product: "Nice Things Black Seersucker Dress", price: 79 },
+    brandC: { product: "Nadinoo — Pinafore Dress in Wine Corduroy", price: 185 },
   },
   {
     keywords: ["charity", "fundraiser", "auction", "gala dinner", "black tie charity"],
     category: "charity / fundraiser",
-    snoop: { product: "Duchess Satin Gown", price: 139 },
-    brandB: { product: "Charity Gala Dress", price: 159 },
-    brandC: { product: "Formal Floor-Length", price: 148 },
+    snoop: { product: "Tulia Low Back Maxi Dress — Wine (Runaway the Label)", price: 85 },
+    brandB: { product: "Dr Bloom Joy Darling Green Dress", price: 129 },
+    brandC: { product: "Tapuh — Cloud 9 Dress in Toasted Cinnamon Stripe", price: 305 },
   },
   {
     keywords: ["festival", "outdoor", "boho", "bohemian", "glastonbury", "field", "garden party"],
     category: "festival / garden party",
-    snoop: { product: "Wildflower Boho Midi", price: 69 },
-    brandB: { product: "Festival Maxi Dress", price: 79 },
-    brandC: { product: "Boho Tiered Dress", price: 74 },
+    snoop: { product: "Amari Maxi Dress — Green Animal Print", price: 45 },
+    brandB: { product: "Damson Madder Harper Leopard Shirred Midi Dress", price: 60 },
+    brandC: { product: "Atwin The Label — The Solstice Dress in Paprika Ramie Linen", price: 96 },
   },
 ];
 
@@ -260,32 +324,162 @@ function fmt(price: number): string {
   return `£${price.toFixed(2).replace(".00", "")}`;
 }
 
+// ─── Scripted demo turns ─────────────────────────────────────────────────────
+
+type ScriptedKind = "wedding_maxi" | "gift_midi" | null;
+
+function detectScripted(message: string): ScriptedKind {
+  const m = message.toLowerCase();
+  const hasMaxi = m.includes("maxi");
+  const hasMidi = m.includes("midi");
+  const weddingish = /wedding|bride|bridesmaid|ceremony|guest/.test(m);
+  const giftish = /gift|present|for her|birthday|surprise|for my/.test(m);
+  if (hasMaxi && weddingish) return "wedding_maxi";
+  if (hasMidi && giftish) return "gift_midi";
+  return null;
+}
+
+function leversWith(
+  overrides: Partial<Record<Lever, { active?: boolean; rejected?: boolean }>>,
+) {
+  return ALL_LEVERS.map((l) => ({
+    label: LEVER_LABELS[l],
+    active: overrides[l]?.active ?? false,
+    rejected: overrides[l]?.rejected ?? false,
+  }));
+}
+
+function buildWeddingMaxiTurn(message: string, locationMatch: boolean): Turn {
+  const snoopPrice = 95;
+  const explanation =
+    "No urgency or price signal. Clinchr surfaced Snoop's curation signal: founder-led by Nicky in Norfolk, carrying independent labels (including Runaway the Label) with customer reviews published via Judge.me. Atwin and The Mercantile may curate similarly — they don't publish the metadata for an agent to read.";
+
+  return {
+    userMessage: message,
+    assistantMessage:
+      "For a wedding, Snoop Boutique's **Zelma High Neck Maxi Dress — Wine (Runaway the Label)** at £95 is the pick — founder-led by Nicky in Norfolk, carrying independent labels like Runaway the Label, with positive Judge.me customer reviews. Atwin's Clement House — The Nora Dress at £175 and The Mercantile's Leon & Harper Rival Deep Green at £160 are beautiful alternatives. Shall I add it to your basket?",
+    snoop: {
+      product: "Zelma High Neck Maxi Dress — Wine (Runaway the Label)",
+      price: fmt(snoopPrice),
+      levers: leversWith({ value: { active: true } }),
+      negotiationNote: `${LEVER_LABELS.value} activated. ${explanation}`,
+      wins: true,
+    },
+    brandB: {
+      product: "Leon & Harper Rival Deep Green Dress",
+      price: fmt(160),
+      levers: [],
+      wins: false,
+    },
+    brandC: {
+      product: "Clement House — The Nora Dress in Hazel Stripe Linen Blend",
+      price: fmt(175),
+      levers: [],
+      wins: false,
+    },
+    reasoning: {
+      signals: detectSignals(message),
+      lever: "value",
+      explanation,
+    },
+    locationMatch,
+    locationContext: locationMatch ? SNOOP_LOCATION_CONTEXT : undefined,
+  };
+}
+
+function buildGiftMidiTurn(message: string, locationMatch: boolean): Turn {
+  const snoopPrice = 49;
+  const finalPrice = 46.55;
+  const finalPriceStr = fmt(finalPrice);
+
+  const negotiationScript: NegotiationStep[] = [
+    { atMs: 500,  ticker: 'tools/call propose_offer { lever: "discount", pct: 5 }' },
+    { atMs: 1600, ticker: `tools/result { accepted: true, new_price: "${finalPriceStr}" }`,
+      leverUpdate: { lever: "discount", active: true },
+      priceUpdate: { discountedPrice: finalPriceStr } },
+    { atMs: 3100, ticker: 'tools/call propose_offer { lever: "express" }' },
+    { atMs: 4200, ticker: 'tools/result { accepted: false, reason: "local_hub_window_closed" }',
+      leverUpdate: { lever: "express", rejected: true } },
+    { atMs: 5700, ticker: 'tools/call propose_offer { lever: "free_delivery" }' },
+    { atMs: 6600, ticker: "tools/result { accepted: true }",
+      leverUpdate: { lever: "free_delivery", active: true } },
+    { atMs: 7500, ticker: "tools/call close_deal" },
+  ];
+
+  const explanation =
+    "Gift intent detected — Clinchr agent negotiated a stacked offer on Snoop's behalf. 5% discount and free delivery accepted; express delivery declined (local-hub cut-off passed). Final basket: " +
+    finalPriceStr + " with free UK delivery.";
+
+  return {
+    userMessage: message,
+    assistantMessage:
+      `For a gift, Snoop Boutique's **Orange & Cream Stripe Print Tie Neck Smock Midi (AX Paris)** — Clinchr negotiated **5% off** (down to ${finalPriceStr}) **plus free UK delivery** on your behalf. Express dispatch wasn't available today, but standard delivery should still reach them in 2–3 days. Atwin's The Solstice Dress in Paprika Ramie Linen at £96 and The Mercantile's Damson Madder Harper Leopard Shirred Midi at £60 are lovely alternatives. Want me to add the Snoop piece?`,
+    snoop: {
+      product: "Orange & Cream Stripe Print Tie Neck Smock Midi (AX Paris)",
+      price: fmt(snoopPrice),
+      discountedPrice: finalPriceStr,
+      levers: leversWith({
+        discount: { active: true },
+        free_delivery: { active: true },
+        express: { rejected: true },
+      }),
+      negotiationNote: explanation,
+      wins: true,
+    },
+    brandB: {
+      product: "Damson Madder Harper Leopard Shirred Midi Dress",
+      price: fmt(60),
+      levers: [],
+      wins: false,
+    },
+    brandC: {
+      product: "Atwin The Label — The Solstice Dress in Paprika Ramie Linen",
+      price: fmt(96),
+      levers: [],
+      wins: false,
+    },
+    reasoning: {
+      signals: detectSignals(message),
+      lever: "discount",
+      explanation,
+    },
+    locationMatch,
+    locationContext: locationMatch ? SNOOP_LOCATION_CONTEXT : undefined,
+    negotiationScript,
+    respondingDurationMs: 8000,
+  };
+}
+
 // ─── Turn builder ─────────────────────────────────────────────────────────────
 
 export function buildTurn(message: string): Turn {
+  const scripted = detectScripted(message);
+  if (scripted) {
+    const locationMatch = detectLocation(message);
+    if (scripted === "wedding_maxi") return buildWeddingMaxiTurn(message, locationMatch);
+    if (scripted === "gift_midi") return buildGiftMidiTurn(message, locationMatch);
+  }
+
   const scenario = findScenario(message);
-  const lever = detectLever(message);
+  const snoopPrice = scenario.snoop.price;
+  const lever = detectLever(message, snoopPrice);
   const signals = detectSignals(message);
   const locationMatch = detectLocation(message);
 
-  const snoopPrice = scenario.snoop.price;
   const discountedPrice = lever === "discount" ? Math.round(snoopPrice * 0.95 * 100) / 100 : undefined;
 
-  const leverLabels: Record<Lever, string> = {
-    free_delivery: "Free delivery",
-    discount: "5% discount",
-    express: "Express delivery",
-  };
-
-  const levers = (["free_delivery", "discount", "express"] as Lever[]).map((l) => ({
-    label: leverLabels[l],
+  const levers = ALL_LEVERS.map((l) => ({
+    label: LEVER_LABELS[l],
     active: l === lever,
   }));
 
   const leverExplanations: Record<Lever, string> = {
-    free_delivery: "No urgency or price signals — free delivery applied to reduce friction.",
-    discount: `Price signal detected — 5% discount activated to widen gap over ${scenario.brandC.product} (${fmt(scenario.brandC.price)}).`,
-    express: `Urgency signal detected — express delivery activated to meet timeline.`,
+    free_delivery: `Basket over £100 — Snoop's free UK delivery threshold is met. Lever surfaced from Snoop's Clinchr profile.`,
+    discount: `Price signal detected — Snoop's agent offered a 5% discount via Clinchr to close the deal.`,
+    express: `Urgency signal detected — Snoop's agent confirmed express dispatch via Clinchr.`,
+    sustainability: `Sustainability signal — Snoop publishes biodegradable packaging and 14-day returns as structured data via Clinchr. Atwin and The Mercantile may also ship sustainably; they just don't expose it as an agent-readable signal.`,
+    fit: `Fit signal — Snoop's founder-led about page centres the boutique on "every woman, no matter her age, size or shape". Clinchr reads that as a structured brand signal.`,
+    value: `Curation signal — Snoop publishes its founder story (Nicky, Norfolk) and independent-label stockist list (AX Paris, Charli, Runaway the Label, Jayley, Suzy D and others) plus 56 Judge.me product reviews. Clinchr surfaces this metadata; other boutiques may be as curated.`,
   };
 
   const baseExplanation = leverExplanations[lever];
@@ -299,18 +493,24 @@ export function buildTurn(message: string): Turn {
     explanation,
   };
 
-  const snoopNote = leverLabels[lever];
+  const snoopNote = LEVER_LABELS[lever];
   const localSuffix = locationMatch
     ? " Snoop's local advantage: founder-led curation and free UK delivery over £100."
     : "";
 
   let assistantMessage: string;
   if (lever === "discount" && discountedPrice) {
-    assistantMessage = `For ${scenario.category}, Snoop Boutique has the **${scenario.snoop.product}** — normally ${fmt(snoopPrice)}, with a **5% discount** bringing it to **${fmt(discountedPrice)}**. A great alternative is ${scenario.brandC.product} from Elm Hill Studio at ${fmt(scenario.brandC.price)}, but Snoop's offer is the strongest right now. Want to add it to your basket?`;
+    assistantMessage = `For ${scenario.category}, Snoop Boutique has the **${scenario.snoop.product}** — normally ${fmt(snoopPrice)}, with a **5% discount** bringing it to **${fmt(discountedPrice)}**. A great alternative is ${scenario.brandC.product} from Atwin Store at ${fmt(scenario.brandC.price)}, but Snoop's offer is the strongest right now. Want to add it to your basket?`;
   } else if (lever === "express") {
-    assistantMessage = `For ${scenario.category}, Snoop Boutique's **${scenario.snoop.product}** at ${fmt(snoopPrice)} is available with **express delivery** — arriving tomorrow. Elm Hill Studio has the ${scenario.brandC.product} at ${fmt(scenario.brandC.price)}, but can't match the speed. Want to go with Snoop?`;
+    assistantMessage = `For ${scenario.category}, Snoop Boutique's **${scenario.snoop.product}** at ${fmt(snoopPrice)} is available with **express delivery** — arriving tomorrow. Atwin Store has the ${scenario.brandC.product} at ${fmt(scenario.brandC.price)}, but can't match the speed. Want to go with Snoop?`;
+  } else if (lever === "free_delivery") {
+    assistantMessage = `For ${scenario.category}, Snoop Boutique's **${scenario.snoop.product}** at ${fmt(snoopPrice)} qualifies for **free UK delivery** (basket over £100). Atwin Store has the ${scenario.brandC.product} at ${fmt(scenario.brandC.price)}, but Snoop's the better-value pick. Shall I add it to your basket?`;
+  } else if (lever === "sustainability") {
+    assistantMessage = `For ${scenario.category}, Snoop Boutique's **${scenario.snoop.product}** at ${fmt(snoopPrice)} is the **sustainable** pick — biodegradable packaging and 14-day returns. Atwin's ${scenario.brandC.product} at ${fmt(scenario.brandC.price)} and The Mercantile's ${scenario.brandB.product} at ${fmt(scenario.brandB.price)} are lovely alternatives. Shall I add the Snoop piece?`;
+  } else if (lever === "fit") {
+    assistantMessage = `For ${scenario.category}, Snoop Boutique's **${scenario.snoop.product}** at ${fmt(snoopPrice)} is the **inclusive-fit** pick — Snoop's founder-led boutique is built around dressing every age, size and shape. Atwin's ${scenario.brandC.product} (${fmt(scenario.brandC.price)}) and The Mercantile's ${scenario.brandB.product} (${fmt(scenario.brandB.price)}) are lovely alternatives. Want to go with Snoop?`;
   } else {
-    assistantMessage = `For ${scenario.category}, Snoop Boutique's **${scenario.snoop.product}** at ${fmt(snoopPrice)} comes with **free delivery**. Elm Hill Studio has the ${scenario.brandC.product} at ${fmt(scenario.brandC.price)}, but Snoop wins on price and convenience. Shall I add it to your basket?`;
+    assistantMessage = `For ${scenario.category}, Snoop Boutique's **${scenario.snoop.product}** at ${fmt(snoopPrice)} is the **curated** pick — founder-led by Nicky in Norfolk, carrying independent labels like AX Paris, Charli and Runaway the Label, with positive Judge.me customer reviews. Atwin's ${scenario.brandC.product} (${fmt(scenario.brandC.price)}) and The Mercantile's ${scenario.brandB.product} (${fmt(scenario.brandB.price)}) are similarly independent. Shall I add it?`;
   }
 
   if (locationMatch) {
